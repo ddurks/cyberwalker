@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>comp guy</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+        <link rel="stylesheet" href="styles.css">
+    </head>
+
+    <body>
+        <canvas id="c"></canvas>
+
+		<!-- Import maps polyfill -->
+		<!-- Remove this when import maps will be widely supported -->
+		<script async src="https://unpkg.com/es-module-shims@1.3.6/dist/es-module-shims.js"></script>
+        <script type="importmap">
+            {
+                "imports": {
+                    "three": "https://unpkg.com/three@0.139.0/build/three.module.js"
+                }
+            }
+        </script>
+        <script type="module">
+            import * as THREE from 'three';
+            import { GLTFLoader } from "https://cdn.jsdelivr.net/npm/three@0.139.0/examples/jsm/loaders/GLTFLoader.js";
+            // import { EffectComposer } from 'https://threejs.org/examples/jsm/postprocessing/EffectComposer.js';
+            // import { RenderPass } from 'https://threejs.org/examples/jsm/postprocessing/RenderPass.js';
+            // import { ShaderPass } from 'https://threejs.org/examples/jsm/postprocessing/ShaderPass.js';
+            // import { PixelShader } from 'https://threejs.org/examples/jsm/shaders/PixelShader.js'
+
+            function main() {
+                const canvas = document.querySelector('#c');
+                const renderer = new THREE.WebGLRenderer({canvas});
+                renderer.outputEncoding = THREE.sRGBEncoding;
+
+                const fov = 45;
+                const aspect = 2;  // the canvas default
+                const near = 0.1;
+                const far = 100;
+                const camera = new THREE.PerspectiveCamera(fov, aspect, near, far);
+                camera.position.set(-10, -5, 0);
+
+                const scene = new THREE.Scene();
+                const WATER_COLOR = 0x6ca0d4;
+                scene.background = new THREE.Color(WATER_COLOR);
+
+                camera.updateMatrix();
+                camera.updateMatrixWorld();
+                var frustum = new THREE.Frustum();
+                frustum.setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
+
+                var clock = new THREE.Clock();
+                var mixer, jaw;
+                var fish;
+                const CURVE_DIVISIONS = 20000;
+
+                var randomPoints;
+                function getRandomPoints() {
+                    randomPoints = [];
+                    for ( var i = 0; i < 100; i ++ ) {
+                        let newVector = new THREE.Vector3(Math.random()*100-50, Math.random()*100-50, Math.random()*100-50);
+                        while (!frustum.containsPoint(newVector)) {
+                            newVector = new THREE.Vector3(Math.random()*100-50, Math.random()*100-50, Math.random()*100-50);
+                        }
+                        randomPoints.push(newVector);
+                    }
+                }
+                getRandomPoints();
+
+                var spline = new THREE.CatmullRomCurve3(randomPoints);
+
+                {
+                    const skyColor = 0xB1E1FF;  // light blue
+                    const groundColor = 0xB97A20;  // brownish orange
+                    const intensity = 0.6;
+                    const light = new THREE.HemisphereLight(skyColor, groundColor, intensity);
+                    scene.add(light);
+                }
+
+                {
+                    const near = 1;
+                    const far = 100;
+                    scene.fog = new THREE.Fog(WATER_COLOR, near, far);
+                }
+
+                {
+                    const color = 0xFFFFFF;
+                    const intensity = 0.8;
+                    const light = new THREE.DirectionalLight(color, intensity);
+                    light.position.set(5, 10, 2);
+                    scene.add(light);
+                    scene.add(light.target);
+                }
+
+                {
+                    const gltfLoader = new GLTFLoader();
+                    gltfLoader.load('./assets/comp_guy.glb', (gltf) => {
+                        fish = gltf.scene;
+                        scene.add(fish);
+                        fish.scale.set(2,2,2);
+
+                        mixer = new THREE.AnimationMixer(fish);
+                        var clip1 = gltf.animations[0];
+                        var action1 = mixer.clipAction(clip1);
+                        action1.play();
+                    });
+                }
+
+                function resizeRendererToDisplaySize(renderer) {
+                    const canvas = renderer.domElement;
+                    const width = canvas.clientWidth;
+                    const height = canvas.clientHeight;
+                    const needResize = canvas.width !== width || canvas.height !== height;
+                    if (needResize) {
+                        renderer.setSize(width, height, false);
+                    }
+                    return needResize;
+                }
+
+
+                var fishPosIndex = 0;
+                function update() {
+                    if (fish !== undefined) {
+                        fishPosIndex++;
+                        if (fishPosIndex > CURVE_DIVISIONS) {
+                            fishPosIndex = 0;
+                        }
+                        var fishPos = spline.getPoint(fishPosIndex / CURVE_DIVISIONS);
+                        var camRot = spline.getTangent(fishPosIndex / CURVE_DIVISIONS);
+
+                        fish.position.x = fishPos.x;
+                        fish.position.y = fishPos.y;
+                        fish.position.z = fishPos.z;
+                        
+                        fish.rotation.x = camRot.x;
+                        fish.rotation.y = camRot.y;
+                        fish.rotation.z = camRot.z;
+
+                        fish.lookAt(spline.getPoint((fishPosIndex+1) / CURVE_DIVISIONS));
+
+                    }
+                    
+                    if (mixer) {
+                        var dt = clock.getDelta();
+                        mixer.update(dt);
+                    }
+                }
+
+                function render() {
+                    if (resizeRendererToDisplaySize(renderer)) {
+                        const canvas = renderer.domElement;
+                        camera.aspect = canvas.clientWidth / canvas.clientHeight;
+                        camera.updateProjectionMatrix();
+                    }
+
+                    renderer.render(scene, camera);
+                }
+
+                function animate() {
+                    update();
+                    render();
+                    
+                    requestAnimationFrame(animate);
+                }
+
+                animate();
+            }
+
+            main();
+        </script>
+    </body>
+</html>
