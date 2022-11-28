@@ -71,7 +71,7 @@ export class CharacterControls {
     const directionPressed = DIRECTIONS.some((key) => keysPressed[key] == true);
     const joystickPressed = JOY_DIRS.some((key) => joyValues[key] > 0);
 
-    var play = "stand";
+    var play = "idle";
     if ((!isMobile && directionPressed) || (isMobile && joystickPressed)) {
       play = "walk";
 
@@ -265,11 +265,10 @@ new GLTFLoader().load("./assets/computer_guy.glb", (gltf) => {
   camera.position.add(guy.position);
 
   const mixer = new THREE.AnimationMixer(guy);
-  var clip1 = gltf.animations[0];
   gltf.animations.forEach((a) => {
     animationsMap.set(a.name, mixer.clipAction(a));
   });
-  walkingAnimation = mixer.clipAction(clip1);
+  animationsMap.get('idle').fadeIn(5).play();
 
   characterControls = new CharacterControls(
     guy,
@@ -277,7 +276,7 @@ new GLTFLoader().load("./assets/computer_guy.glb", (gltf) => {
     animationsMap,
     orbitControls,
     camera,
-    "stand"
+    "idle"
   );
 });
 
