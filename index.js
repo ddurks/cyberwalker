@@ -254,7 +254,7 @@ light();
 // FLOOR
 generateFloor();
 
-var characterControls, guy, walkingAnimation, animationsMap = new Map();
+var characterControls, guy, animationsMap = new Map();
 new GLTFLoader().load("./assets/computer_guy.glb", (gltf) => {
   gltf.scene.traverse(function (object) {
     if (object.isMesh) object.castShadow = true;
@@ -404,6 +404,5 @@ function addJoystick() {
     joyValues.backward = 0;
     joyValues.left = 0;
     joyValues.right = 0;
-    walkingAnimation.stop();
   });
 }
