@@ -45,6 +45,7 @@ export class CharacterControls {
   // constants
   walkVelocity = 10;
   fadeDuration = 0.2;
+  oldPosition = null;
 
   constructor(
     model,
@@ -60,6 +61,7 @@ export class CharacterControls {
     this.currentAction = currentAction;
     this.orbitControl = orbitControl;
     this.camera = camera;
+    this.oldPosition = { x: this.model.x, y: this.model.y, z: this.model.z };
     this.updateCameraTarget(0, 0);
   }
 
@@ -72,7 +74,7 @@ export class CharacterControls {
     const joystickPressed = JOY_DIRS.some((key) => joyValues[key] > 0);
 
     var play = "idle";
-    if ((!isMobile && directionPressed) || (isMobile && joystickPressed)) {
+    if (((!isMobile && directionPressed) || (isMobile && joystickPressed))) {
       play = "walk";
 
       // calculate towards camera direction
@@ -109,7 +111,9 @@ export class CharacterControls {
       const moveZ = this.walkDirection.z * velocity * delta;
       this.model.position.x += moveX;
       this.model.position.z += moveZ;
-      this.updateCameraTarget(moveX, moveZ);
+      if (!this.model.colliding) {
+        this.updateCameraTarget(moveX, moveZ);
+      }
     }
 
     this.updateAnim(play, delta);
@@ -254,15 +258,23 @@ light();
 // FLOOR
 generateFloor();
 
-var characterControls, guy, animationsMap = new Map();
+var characterControls, guy, animationsMap = new Map(), collisionCube, collisionBox;
 new GLTFLoader().load("./assets/computer_guy.glb", (gltf) => {
   gltf.scene.traverse(function (object) {
     if (object.isMesh) object.castShadow = true;
   });
   guy = gltf.scene.children[0];
   guy.rotateY(Math.PI);
+  guy.colliding = false;
   scene.add(guy);
   camera.position.add(guy.position);
+
+  var cubeGeometry = new THREE.BoxGeometry(1,1,1,0,0,0);
+	var wireMaterial = new THREE.MeshBasicMaterial( { color: 0xff0000, wireframe:true } );
+	collisionCube = new THREE.Mesh( cubeGeometry, wireMaterial );
+	collisionCube.position.set(guy.position.x, guy.position.y, guy.position.z);
+	scene.add( collisionCube );
+  collisionBox = new THREE.Box3().setFromObject(collisionCube);
 
   const mixer = new THREE.AnimationMixer(guy);
   gltf.animations.forEach((a) => {
@@ -278,6 +290,19 @@ new GLTFLoader().load("./assets/computer_guy.glb", (gltf) => {
     camera,
     "idle"
   );
+});
+
+var building, collidableBoxList = [], buildingBox;
+new GLTFLoader().load("./assets/building01.glb", (gltf) => {
+  gltf.scene.traverse(function (object) {
+    if (object.isMesh) object.castShadow = true;
+  });
+  building = gltf.scene.children[0];
+  building.position.set(0,4,-10);
+  scene.add(building);
+
+  buildingBox = new THREE.Box3().setFromObject(building);
+  collidableBoxList.push(buildingBox);
 });
 
 // CONTROL KEYS
@@ -308,11 +333,32 @@ function animate() {
       joyValues,
       IS_MOBILE
     );
+    collisionCube.position.set(guy.position.x, guy.position.y, guy.position.z);
+    collisionBox.setFromObject(collisionCube);
+    detectCollisions();
+    if (guy.colliding) {
+      guy.position.set(characterControls.oldPosition.x, characterControls.oldPosition.y, characterControls.oldPosition.z);
+      collisionCube.position.set(guy.position.x, guy.position.y, guy.position.z);
+      collisionBox.setFromObject(collisionCube);
+    }
+    characterControls.oldPosition = { x: guy.position.x, y: guy.position.y, z: guy.position.z };
   }
   orbitControls.update();
   renderer.render(scene, camera);
   requestAnimationFrame(animate);
 }
+
+// COLLISIONS
+function detectCollisions() {
+  collidableBoxList.forEach(box => {
+    if (collisionBox.intersectsBox(box)) {
+      guy.colliding = true;
+    } else {
+      guy.colliding = false;
+    }
+  })
+}
+
 document.body.appendChild(renderer.domElement);
 THREE.DefaultLoadingManager.onLoad = () => {
   document.getElementById("loading").outerHTML = "";
