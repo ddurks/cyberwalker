@@ -39,7 +39,6 @@ export class CharacterControls {
   rotateAngle = new THREE.Vector3(0, 1, 0);
   rotateQuarternion = new THREE.Quaternion();
   cameraTarget = new THREE.Vector3();
-
   walkVelocity = 10;
   fadeDuration = 0.2;
   oldPosition = null;
@@ -89,7 +88,8 @@ export class CharacterControls {
         angleYCameraDirection + directionOffset
       );
       this.model.quaternion.rotateTowards(this.rotateQuarternion, 0.2);
-      body.quaternion.copy(guy.quaternion);
+      // body.quaternion.copy(guy.quaternion);
+      // body.quaternion.setFromAxisAngle(this.rotateAngle, angleYCameraDirection + directionOffset);
 
       // calculate direction
       this.camera.getWorldDirection(this.walkDirection);
@@ -99,7 +99,7 @@ export class CharacterControls {
 
       // move model & camera
       body.velocity.set(this.walkDirection.x * this.walkVelocity, 0, this.walkDirection.z * this.walkVelocity);
-      body.linearDamping = 0.95;
+      body.linearDamping = 0.999;
       this.updateCameraTarget(this.walkDirection.x * this.walkVelocity * delta, this.walkDirection.z * this.walkVelocity * delta);
     } else {
       this.updateCameraTarget(this.walkDirection.x * body.velocity.x * delta, this.walkDirection.z * body.velocity.z * delta);
@@ -231,18 +231,26 @@ orbitControls.update();
 
 // PHYSICS
 const world = new CANNON.World();
-
-// joystick vars
-var joyManager;
-var joyValues = {
-  backward: 0,
-  forward: 0,
-  right: 0,
-  left: 0,
-  tempVector: new THREE.Vector3(),
-  upVector: new THREE.Vector3(0, 1, 0),
-  tempVector: new THREE.Vector3(),
-};
+// Tweak contact properties.
+// Contact stiffness - use to make softer/harder contacts
+world.defaultContactMaterial.contactEquationStiffness = 1e9;
+// Stabilization time in number of timesteps
+world.defaultContactMaterial.contactEquationRelaxation = 4;
+const solver = new CANNON.GSSolver();
+solver.iterations = 7;
+solver.tolerance = 0.1;
+world.solver = new CANNON.SplitSolver(solver);
+// use this to test non-split solver
+// world.solver = solver
+world.gravity.set(0, -20, 0)
+// Create a contact material (friction coefficient = 0.0)
+var physicsMaterial = new CANNON.Material('physics');
+const physics_physics = new CANNON.ContactMaterial(physicsMaterial, physicsMaterial, {
+  friction: 0.0,
+  restitution: 0.0,
+});
+// We must add the contact materials to the world
+world.addContactMaterial(physics_physics);
 
 // LIGHTS
 light();
@@ -250,6 +258,7 @@ light();
 // FLOOR
 generateFloor();
 
+// LOAD ASSETS and BUILD SCENE
 var gLoader = new GLTFLoader();
 
 var characterControls, guy, animationsMap = new Map(), body;
@@ -259,13 +268,18 @@ gLoader.load("./assets/computer_guy.glb", (gltf) => {
   });
   guy = gltf.scene.children[0];
   guy.rotateY(Math.PI);
+  guy.position.set(0, 1, 0);
   scene.add(guy);
   camera.position.add(guy.position);
+
+  const slipperyMaterial = new CANNON.Material('slippery');
+  slipperyMaterial.friction = 0;
 
   // Player physics body
   const shape = new CANNON.Box(new CANNON.Vec3(1, 1, 1));
   body = new CANNON.Body({
     mass: 1,
+    material: slipperyMaterial
   });
   body.addShape(shape);
   body.position.set(guy.position.x, guy.position.y, guy.position.z);
@@ -319,7 +333,7 @@ gLoader.load("./assets/building01.glb", (gltf) => {
   world.addBody(cylinderBuildingBody);
 });
 
-// CONTROL KEYS
+// KEYBOARD CONTROLS
 const keysPressed = {};
 document.addEventListener(
   "keydown",
@@ -336,75 +350,17 @@ document.addEventListener(
   false
 );
 
-const clock = new THREE.Clock();
-const timeStep = 1/60;
-// ANIMATE
-function animate() {
-  let mixerUpdateDelta = clock.getDelta();
-  if (characterControls) {
-    characterControls.update(
-      mixerUpdateDelta,
-      keysPressed,
-      joyValues,
-      IS_MOBILE
-    );
-    guy.position.copy(body.position);
-  }
-  orbitControls.update();
-  renderer.render(scene, camera);
-  world.step(timeStep, mixerUpdateDelta);
-  requestAnimationFrame(animate);
-}
-
-document.body.appendChild(renderer.domElement);
-THREE.DefaultLoadingManager.onLoad = () => {
-  document.getElementById("loading").outerHTML = "";
-  if (IS_MOBILE) {
-    addJoystick();
-  }
-  animate();
+// JOYSTICK
+var joyManager;
+var joyValues = {
+  backward: 0,
+  forward: 0,
+  right: 0,
+  left: 0,
+  tempVector: new THREE.Vector3(),
+  upVector: new THREE.Vector3(0, 1, 0),
+  tempVector: new THREE.Vector3(),
 };
-
-// RESIZE HANDLER
-function onWindowResize() {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
-}
-window.addEventListener("resize", onWindowResize);
-
-function generateFloor() {
-  const WIDTH = 80;
-  const LENGTH = 80;
-
-  const textureLoader = new THREE.TextureLoader();
-  const placeholder = textureLoader.load("./assets/grass_texture_01.jpg");
-  const geometry = new THREE.PlaneGeometry(WIDTH, LENGTH, 512, 512);
-  var material_floor = new THREE.MeshNormalMaterial();
-  const material = new THREE.MeshPhongMaterial({ map: placeholder });
-
-  const floor = new THREE.Mesh(geometry, material);
-  floor.receiveShadow = true;
-  floor.rotation.x = -Math.PI / 2;
-  scene.add(floor);
-}
-
-function light() {
-  scene.add(new THREE.AmbientLight(0xffffff, 0.7));
-
-  const dirLight = new THREE.DirectionalLight(0xffffff, 1);
-  dirLight.position.set(-60, 100, -10);
-  dirLight.castShadow = true;
-  dirLight.shadow.camera.top = 50;
-  dirLight.shadow.camera.bottom = -50;
-  dirLight.shadow.camera.left = -50;
-  dirLight.shadow.camera.right = 50;
-  dirLight.shadow.camera.near = 0.1;
-  dirLight.shadow.camera.far = 200;
-  dirLight.shadow.mapSize.width = 4096;
-  dirLight.shadow.mapSize.height = 4096;
-  scene.add(dirLight);
-}
 
 function addJoystick() {
   const options = {
@@ -448,4 +404,86 @@ function addJoystick() {
     joyValues.left = 0;
     joyValues.right = 0;
   });
+}
+
+// ANIMATE
+const clock = new THREE.Clock();
+const timeStep = 1/60;
+function animate() {
+  let mixerUpdateDelta = clock.getDelta();
+  if (characterControls) {
+    characterControls.update(
+      mixerUpdateDelta,
+      keysPressed,
+      joyValues,
+      IS_MOBILE
+    );
+    guy.position.copy(body.position);
+    // guy.quaternion.copy(body.quaternion);
+  }
+  orbitControls.update();
+  renderer.render(scene, camera);
+  world.step(timeStep, mixerUpdateDelta);
+  requestAnimationFrame(animate);
+}
+
+document.body.appendChild(renderer.domElement);
+THREE.DefaultLoadingManager.onLoad = () => {
+  document.getElementById("loading").outerHTML = "";
+  if (IS_MOBILE) {
+    addJoystick();
+  }
+  animate();
+};
+
+// RESIZE HANDLER
+function onWindowResize() {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+}
+window.addEventListener("resize", onWindowResize);
+
+function generateFloor() {
+  // Ground Render
+  const WIDTH = 80;
+  const LENGTH = 80;
+
+  const textureLoader = new THREE.TextureLoader();
+  const placeholder = textureLoader.load("./assets/grass_texture_01.jpg");
+  const geometry = new THREE.PlaneGeometry(WIDTH, LENGTH, 512, 512);
+  var material_floor = new THREE.MeshNormalMaterial();
+  const material = new THREE.MeshPhongMaterial({ map: placeholder });
+
+  const floor = new THREE.Mesh(geometry, material);
+  floor.receiveShadow = true;
+  floor.rotation.x = -Math.PI / 2;
+  scene.add(floor);
+
+  // Ground Physics
+  const groundMaterial = new CANNON.Material('ground')
+  groundMaterial.friction = 0.3
+  const groundShape = new CANNON.Plane();
+  const groundBody = new CANNON.Body({ mass: 0, material: groundMaterial });
+  groundBody.addShape(groundShape)
+  groundBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0)
+  groundBody.position.set(0, -1, 0);
+  world.addBody(groundBody)
+}
+
+function light() {
+  scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+
+  const dirLight = new THREE.DirectionalLight(0xffffff, 1);
+  dirLight.position.set(-60, 100, -10);
+  dirLight.castShadow = true;
+  dirLight.shadow.camera.top = 50;
+  dirLight.shadow.camera.bottom = -50;
+  dirLight.shadow.camera.left = -50;
+  dirLight.shadow.camera.right = 50;
+  dirLight.shadow.camera.near = 0.1;
+  dirLight.shadow.camera.far = 200;
+  dirLight.shadow.mapSize.width = 4096;
+  dirLight.shadow.mapSize.height = 4096;
+  scene.add(dirLight);
 }
