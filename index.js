@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { GLTFLoader } from "https://cdn.jsdelivr.net/npm/three@0.139.0/examples/jsm/loaders/GLTFLoader.js";
 import { OrbitControls } from "https://cdn.jsdelivr.net/npm/three@0.117.1/examples/jsm/controls/OrbitControls.js";
+import * as CANNON from 'cannon';
 
 var IS_MOBILE;
 if (
@@ -33,16 +34,12 @@ export const rt = "right";
 export const JOY_DIRS = [fwd, back, lft, rt];
 
 export class CharacterControls {
-  // state
-  toggleRun = true;
 
-  // temporary data
   walkDirection = new THREE.Vector3();
   rotateAngle = new THREE.Vector3(0, 1, 0);
   rotateQuarternion = new THREE.Quaternion();
   cameraTarget = new THREE.Vector3();
 
-  // constants
   walkVelocity = 10;
   fadeDuration = 0.2;
   oldPosition = null;
@@ -63,10 +60,6 @@ export class CharacterControls {
     this.camera = camera;
     this.oldPosition = { x: this.model.x, y: this.model.y, z: this.model.z };
     this.updateCameraTarget(0, 0);
-  }
-
-  switchRunToggle() {
-    this.toggleRun = !this.toggleRun;
   }
 
   update(delta, keysPressed, joyValues, isMobile) {
@@ -96,6 +89,7 @@ export class CharacterControls {
         angleYCameraDirection + directionOffset
       );
       this.model.quaternion.rotateTowards(this.rotateQuarternion, 0.2);
+      body.quaternion.copy(guy.quaternion);
 
       // calculate direction
       this.camera.getWorldDirection(this.walkDirection);
@@ -103,17 +97,12 @@ export class CharacterControls {
       this.walkDirection.normalize();
       this.walkDirection.applyAxisAngle(this.rotateAngle, directionOffset);
 
-      // run/walk velocity
-      const velocity = this.walkVelocity;
-
       // move model & camera
-      const moveX = this.walkDirection.x * velocity * delta;
-      const moveZ = this.walkDirection.z * velocity * delta;
-      this.model.position.x += moveX;
-      this.model.position.z += moveZ;
-      if (!this.model.colliding) {
-        this.updateCameraTarget(moveX, moveZ);
-      }
+      body.velocity.set(this.walkDirection.x * this.walkVelocity, 0, this.walkDirection.z * this.walkVelocity);
+      body.linearDamping = 0.95;
+      this.updateCameraTarget(this.walkDirection.x * this.walkVelocity * delta, this.walkDirection.z * this.walkVelocity * delta);
+    } else {
+      this.updateCameraTarget(this.walkDirection.x * body.velocity.x * delta, this.walkDirection.z * body.velocity.z * delta);
     }
 
     this.updateAnim(play, delta);
@@ -240,6 +229,9 @@ orbitControls.enablePan = false;
 orbitControls.maxPolarAngle = Math.PI / 2 - 0.05;
 orbitControls.update();
 
+// PHYSICS
+const world = new CANNON.World();
+
 // joystick vars
 var joyManager;
 var joyValues = {
@@ -258,23 +250,26 @@ light();
 // FLOOR
 generateFloor();
 
-var characterControls, guy, animationsMap = new Map(), collisionCube, collisionBox;
-new GLTFLoader().load("./assets/computer_guy.glb", (gltf) => {
+var gLoader = new GLTFLoader();
+
+var characterControls, guy, animationsMap = new Map(), body;
+gLoader.load("./assets/computer_guy.glb", (gltf) => {
   gltf.scene.traverse(function (object) {
     if (object.isMesh) object.castShadow = true;
   });
   guy = gltf.scene.children[0];
   guy.rotateY(Math.PI);
-  guy.colliding = false;
   scene.add(guy);
   camera.position.add(guy.position);
 
-  var cubeGeometry = new THREE.BoxGeometry(1,1,1,0,0,0);
-	var wireMaterial = new THREE.MeshBasicMaterial( { color: 0xff0000, wireframe:true } );
-	collisionCube = new THREE.Mesh( cubeGeometry, wireMaterial );
-	collisionCube.position.set(guy.position.x, guy.position.y, guy.position.z);
-	scene.add( collisionCube );
-  collisionBox = new THREE.Box3().setFromObject(collisionCube);
+  // Player physics body
+  const shape = new CANNON.Box(new CANNON.Vec3(1, 1, 1));
+  body = new CANNON.Body({
+    mass: 1,
+  });
+  body.addShape(shape);
+  body.position.set(guy.position.x, guy.position.y, guy.position.z);
+  world.addBody(body);
 
   const mixer = new THREE.AnimationMixer(guy);
   gltf.animations.forEach((a) => {
@@ -292,17 +287,36 @@ new GLTFLoader().load("./assets/computer_guy.glb", (gltf) => {
   );
 });
 
-var building, collidableBoxList = [], buildingBox;
-new GLTFLoader().load("./assets/building01.glb", (gltf) => {
+var building, cylinder, squareBuildingBody, cylinderBuildingBody;
+gLoader.load("./assets/building01.glb", (gltf) => {
   gltf.scene.traverse(function (object) {
     if (object.isMesh) object.castShadow = true;
   });
-  building = gltf.scene.children[0];
-  building.position.set(0,4,-10);
+  building = gltf.scene.getObjectByName( 'square_building' );
+  building.position.set(-10,4,0);
   scene.add(building);
 
-  buildingBox = new THREE.Box3().setFromObject(building);
-  collidableBoxList.push(buildingBox);
+  cylinder = gltf.scene.getObjectByName( 'cylinder_building' )
+  cylinder.position.set(10,4,0);
+  scene.add(cylinder);
+
+  const shape1 = new CANNON.Box(new CANNON.Vec3(4, 4, 4));
+  squareBuildingBody = new CANNON.Body({
+    mass: 0,
+    type: CANNON.Body.KINEMATIC,
+    position: new CANNON.Vec3(building.position.x, building.position.y, building.position.z),
+  });
+  squareBuildingBody.addShape(shape1);
+  world.addBody(squareBuildingBody);
+  
+  const shape2 = new CANNON.Box(new CANNON.Vec3(4, 4, 4));
+  cylinderBuildingBody = new CANNON.Body({
+    mass: 0,
+    type: CANNON.Body.KINEMATIC,
+    position: new CANNON.Vec3(cylinder.position.x, cylinder.position.y, cylinder.position.z),
+  });
+  cylinderBuildingBody.addShape(shape2);
+  world.addBody(cylinderBuildingBody);
 });
 
 // CONTROL KEYS
@@ -323,6 +337,7 @@ document.addEventListener(
 );
 
 const clock = new THREE.Clock();
+const timeStep = 1/60;
 // ANIMATE
 function animate() {
   let mixerUpdateDelta = clock.getDelta();
@@ -333,30 +348,12 @@ function animate() {
       joyValues,
       IS_MOBILE
     );
-    collisionCube.position.set(guy.position.x, guy.position.y, guy.position.z);
-    collisionBox.setFromObject(collisionCube);
-    detectCollisions();
-    if (guy.colliding) {
-      guy.position.set(characterControls.oldPosition.x, characterControls.oldPosition.y, characterControls.oldPosition.z);
-      collisionCube.position.set(guy.position.x, guy.position.y, guy.position.z);
-      collisionBox.setFromObject(collisionCube);
-    }
-    characterControls.oldPosition = { x: guy.position.x, y: guy.position.y, z: guy.position.z };
+    guy.position.copy(body.position);
   }
   orbitControls.update();
   renderer.render(scene, camera);
+  world.step(timeStep, mixerUpdateDelta);
   requestAnimationFrame(animate);
-}
-
-// COLLISIONS
-function detectCollisions() {
-  collidableBoxList.forEach(box => {
-    if (collisionBox.intersectsBox(box)) {
-      guy.colliding = true;
-    } else {
-      guy.colliding = false;
-    }
-  })
 }
 
 document.body.appendChild(renderer.domElement);
