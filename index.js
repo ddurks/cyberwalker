@@ -57,7 +57,6 @@ export class CharacterControls {
     this.currentAction = currentAction;
     this.orbitControl = orbitControl;
     this.camera = camera;
-    this.oldPosition = { x: this.model.x, y: this.model.y, z: this.model.z };
     this.updateCameraTarget(0, 0);
   }
 
@@ -71,8 +70,8 @@ export class CharacterControls {
 
       // calculate towards camera direction
       var angleYCameraDirection = Math.atan2(
-        this.camera.position.x - this.model.position.x,
-        this.camera.position.z - this.model.position.z
+        this.camera.position.x - body.position.x,
+        this.camera.position.z - body.position.z
       );
       // diagonal movement angle offset
       var directionOffset;
@@ -88,8 +87,6 @@ export class CharacterControls {
         angleYCameraDirection + directionOffset
       );
       this.model.quaternion.rotateTowards(this.rotateQuarternion, 0.2);
-      // body.quaternion.copy(guy.quaternion);
-      // body.quaternion.setFromAxisAngle(this.rotateAngle, angleYCameraDirection + directionOffset);
 
       // calculate direction
       this.camera.getWorldDirection(this.walkDirection);
@@ -100,10 +97,8 @@ export class CharacterControls {
       // move model & camera
       body.velocity.set(this.walkDirection.x * this.walkVelocity, 0, this.walkDirection.z * this.walkVelocity);
       body.linearDamping = 0.999;
-      this.updateCameraTarget(this.walkDirection.x * this.walkVelocity * delta, this.walkDirection.z * this.walkVelocity * delta);
-    } else {
-      this.updateCameraTarget(this.walkDirection.x * body.velocity.x * delta, this.walkDirection.z * body.velocity.z * delta);
     }
+    this.updateCameraTarget(body.velocity.x * delta, body.velocity.z * delta);
 
     this.updateAnim(play, delta);
   }
@@ -127,9 +122,9 @@ export class CharacterControls {
     this.camera.position.z += moveZ;
 
     // update camera target
-    this.cameraTarget.x = this.model.position.x;
-    this.cameraTarget.y = this.model.position.y + 1;
-    this.cameraTarget.z = this.model.position.z;
+    this.cameraTarget.x = body.position.x;
+    this.cameraTarget.y = body.position.y;
+    this.cameraTarget.z = body.position.z;
     this.orbitControl.target = this.cameraTarget;
   }
 
@@ -203,6 +198,29 @@ export class CharacterControls {
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0xa8def0);
 
+// PHYSICS
+const world = new CANNON.World();
+// Tweak contact properties.
+// Contact stiffness - use to make softer/harder contacts
+world.defaultContactMaterial.contactEquationStiffness = 1e9;
+// Stabilization time in number of timesteps
+world.defaultContactMaterial.contactEquationRelaxation = 4;
+const solver = new CANNON.GSSolver();
+solver.iterations = 7;
+solver.tolerance = 0.1;
+world.solver = new CANNON.SplitSolver(solver);
+// use this to test non-split solver
+// world.solver = solver
+world.gravity.set(0, -20, 0)
+// Create a contact material (friction coefficient = 0.0)
+var physicsMaterial = new CANNON.Material('physics');
+const physics_physics = new CANNON.ContactMaterial(physicsMaterial, physicsMaterial, {
+  friction: 0.0,
+  restitution: 0.0,
+});
+// We must add the contact materials to the world
+world.addContactMaterial(physics_physics);
+
 // CAMERA
 const camera = new THREE.PerspectiveCamera(
   45,
@@ -228,29 +246,6 @@ orbitControls.maxDistance = 15;
 orbitControls.enablePan = false;
 orbitControls.maxPolarAngle = Math.PI / 2 - 0.05;
 orbitControls.update();
-
-// PHYSICS
-const world = new CANNON.World();
-// Tweak contact properties.
-// Contact stiffness - use to make softer/harder contacts
-world.defaultContactMaterial.contactEquationStiffness = 1e9;
-// Stabilization time in number of timesteps
-world.defaultContactMaterial.contactEquationRelaxation = 4;
-const solver = new CANNON.GSSolver();
-solver.iterations = 7;
-solver.tolerance = 0.1;
-world.solver = new CANNON.SplitSolver(solver);
-// use this to test non-split solver
-// world.solver = solver
-world.gravity.set(0, -20, 0)
-// Create a contact material (friction coefficient = 0.0)
-var physicsMaterial = new CANNON.Material('physics');
-const physics_physics = new CANNON.ContactMaterial(physicsMaterial, physicsMaterial, {
-  friction: 0.0,
-  restitution: 0.0,
-});
-// We must add the contact materials to the world
-world.addContactMaterial(physics_physics);
 
 // LIGHTS
 light();
@@ -282,7 +277,7 @@ gLoader.load("./assets/computer_guy.glb", (gltf) => {
     material: slipperyMaterial
   });
   body.addShape(shape);
-  body.position.set(guy.position.x, guy.position.y, guy.position.z);
+  body.position.copy(guy.position);
   world.addBody(body);
 
   const mixer = new THREE.AnimationMixer(guy);
@@ -419,7 +414,7 @@ function animate() {
       IS_MOBILE
     );
     guy.position.copy(body.position);
-    // guy.quaternion.copy(body.quaternion);
+    body.quaternion.copy(guy.quaternion);
   }
   orbitControls.update();
   renderer.render(scene, camera);
