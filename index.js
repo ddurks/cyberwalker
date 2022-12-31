@@ -39,9 +39,11 @@ export class CharacterControls {
   rotateAngle = new THREE.Vector3(0, 1, 0);
   rotateQuarternion = new THREE.Quaternion();
   cameraTarget = new THREE.Vector3();
+  defaultWalkVelocity = 10;
   walkVelocity = 10;
   fadeDuration = 0.2;
   oldPosition = null;
+  walkStart = null;
 
   constructor(
     model,
@@ -66,6 +68,9 @@ export class CharacterControls {
     var play = "idle";
     if (((!isMobile && directionPressed) || (isMobile && joystickPressed))) {
       play = "walk";
+      if (this.walkStart === null) {
+        this.walkStart = Date.now();
+      }
 
       // calculate towards camera direction
       var angleYCameraDirection = Math.atan2(
@@ -96,6 +101,9 @@ export class CharacterControls {
       // move model & camera
       body.velocity.set(this.walkDirection.x * this.walkVelocity, 0, this.walkDirection.z * this.walkVelocity);
       body.linearDamping = 0.999;
+    } else {
+      this.walkStart = null;
+      this.walkVelocity = this.defaultWalkVelocity;
     }
 
     this.updateCameraTarget();
@@ -113,7 +121,18 @@ export class CharacterControls {
 
       this.currentAction = play;
     }
-    this.mixer.update(delta);
+    var speedMultiplier = 1;
+    if (this.walkStart !== null) {
+      var deltat = Date.now() - this.walkStart;
+      if (deltat > 2000) {
+        speedMultiplier = (deltat / 2000);
+        if (speedMultiplier > 2) {
+          speedMultiplier = 2;
+        }
+      }
+      this.walkVelocity = this.defaultWalkVelocity * speedMultiplier;
+    }
+    this.mixer.update(delta * speedMultiplier);
   }
 
   updateCameraTarget(moveX, moveZ) {
