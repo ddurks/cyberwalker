@@ -57,7 +57,6 @@ export class CharacterControls {
     this.currentAction = currentAction;
     this.orbitControl = orbitControl;
     this.camera = camera;
-    this.updateCameraTarget(0, 0);
   }
 
   update(delta, keysPressed, joyValues, isMobile) {
@@ -98,7 +97,8 @@ export class CharacterControls {
       body.velocity.set(this.walkDirection.x * this.walkVelocity, 0, this.walkDirection.z * this.walkVelocity);
       body.linearDamping = 0.999;
     }
-    this.updateCameraTarget(body.velocity.x * delta, body.velocity.z * delta);
+
+    this.updateCameraTarget();
 
     this.updateAnim(play, delta);
   }
@@ -117,13 +117,27 @@ export class CharacterControls {
   }
 
   updateCameraTarget(moveX, moveZ) {
+    // calculate camera movement
+    var moveX, moveZ;
+    if (body.velocity.x > 0) {
+      moveX = Math.abs(body.position.x - body.lastPosition.x);
+    } else {
+      moveX = - Math.abs(body.position.x - body.lastPosition.x);
+    }
+    if (body.velocity.z > 0) {
+      moveZ = Math.abs(body.position.z - body.lastPosition.z);
+    } else {
+      moveZ = - Math.abs(body.position.z - body.lastPosition.z);
+    }
+    body.lastPosition = { x: body.position.x, y: body.position.y, z: body.position.z };
+
     // move camera
     this.camera.position.x += moveX;
     this.camera.position.z += moveZ;
 
     // update camera target
     this.cameraTarget.x = body.position.x;
-    this.cameraTarget.y = body.position.y;
+    this.cameraTarget.y = body.position.y + 1;
     this.cameraTarget.z = body.position.z;
     this.orbitControl.target = this.cameraTarget;
   }
@@ -278,6 +292,7 @@ gLoader.load("./assets/computer_guy.glb", (gltf) => {
   });
   body.addShape(shape);
   body.position.copy(guy.position);
+  body.lastPosition = { x: body.position.x, y: body.position.y, z: body.position.z };
   world.addBody(body);
 
   const mixer = new THREE.AnimationMixer(guy);
@@ -467,7 +482,7 @@ function generateFloor() {
 }
 
 function light() {
-  scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+  scene.add(new THREE.AmbientLight(0xffffff, 0.5));
 
   const dirLight = new THREE.DirectionalLight(0xffffff, 1);
   dirLight.position.set(-60, 100, -10);
