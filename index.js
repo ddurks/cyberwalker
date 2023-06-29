@@ -261,7 +261,7 @@ const camera = new THREE.PerspectiveCamera(
   0.1,
   100
 );
-camera.position.set(0, 10000, 100);
+camera.position.set(0, 50, 100);
 
 // RENDERER
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -609,7 +609,7 @@ function addGround(x,z) {
 }
 
 function proceduralWorldUpdate() {
-  console.log(current_region.x, current_region.z, current_region);
+  // console.log(current_region.x, current_region.z, current_region);
   if (body.position.z < current_region.z) {
     if (createRegion(current_region.x, current_region.z - REGION_SIZE)) {
       let newRegion = {
@@ -661,15 +661,34 @@ function proceduralWorldUpdate() {
 }
 
 function updateCurrentRegion() {
-  if (body.position.x > current_region.x + 42) {
-    current_region = current_region.right;
-  } else if (body.position.x < current_region.x - 42) {
-    current_region = current_region.left;
-  }
-  if (body.position.z > current_region.z + 42) {
-    current_region = current_region.bottom;
-  } else if (body.position.z < current_region.z - 42) {
-    current_region = current_region.top;
+  if (body.position.x > current_region.x + (REGION_SIZE/2)) {
+    if (current_region.right) {
+      current_region = current_region.right;
+    } else {
+      console.log('CURRENT REGION: ', current_region);
+      console.log('MISSING RIGHT REGION');
+    }
+  } else if (body.position.x < current_region.x - (REGION_SIZE/2)) {
+    if (current_region.left) {
+      current_region = current_region.left;
+    } else {
+      console.log('CURRENT REGION: ', current_region);
+      console.log('MISSING LEFT REGION');
+    }  }
+  if (body.position.z > current_region.z + (REGION_SIZE/2)) {
+    if (current_region.bottom) {
+      current_region = current_region.bottom;
+    } else {
+      console.log('CURRENT REGION: ', current_region);
+      console.log('MISSING BOTTOM REGION');
+    }
+  } else if (body.position.z < current_region.z - (REGION_SIZE/2)) {
+    if (current_region.top) {
+      current_region = current_region.top;
+    } else {
+      console.log('CURRENT REGION: ', current_region);
+      console.log('MISSING TOP REGION');
+    }
   }
 }
 
@@ -679,7 +698,7 @@ function checkForConnectedRegions(newRegion) {
   let regionBottom = regionsList.filter(region => (region.x === newRegion.x && region.z === newRegion.z + REGION_SIZE));
   let regionTop = regionsList.filter(region => (region.x === newRegion.x && region.z === newRegion.z - REGION_SIZE));
 
-  console.log(regionRight, regionLeft, regionTop, regionBottom);
+  // console.log(regionRight, regionLeft, regionTop, regionBottom);
 
   if (regionLeft && newRegion.left === undefined) {
     newRegion.left = regionLeft[0];
